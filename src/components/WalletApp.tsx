@@ -9,27 +9,16 @@ import {
   EyeOff,
   ArrowUpRight,
   ArrowDownLeft,
-  Smartphone,
   Shield,
-  CreditCard
+  CreditCard,
+  LogOut,
+  Loader2
 } from 'lucide-react';
+import { authService, type UserProfile } from '../lib/auth';
+import { transactionService } from '../lib/transactions';
+import type { Database } from '../lib/database.types';
 
-interface Transaction {
-  id: string;
-  type: 'deposit' | 'withdrawal';
-  amount: number;
-  provider: string;
-  phone: string;
-  status: 'pending' | 'completed' | 'failed';
-  date: Date;
-  reference: string;
-}
-
-interface User {
-  name: string;
-  phone: string;
-  balance: number;
-}
+type Transaction = Database['public']['Tables']['transactions']['Row'];
 
 const PROVIDERS = [
   { id: 'mtn', name: 'MTN Mobile Money', color: 'bg-yellow-500', logo: '📱' },
@@ -37,46 +26,17 @@ const PROVIDERS = [
   { id: 'telecel', name: 'Telecel Cash', color: 'bg-blue-500', logo: '💳' },
 ];
 
-export default function WalletApp() {
+interface WalletAppProps {
+  onSignOut: () => void;
+}
+
+export default function WalletApp({ onSignOut }: WalletAppProps) {
   const [currentView, setCurrentView] = useState<'dashboard' | 'deposit' | 'withdraw' | 'history' | 'profile'>('dashboard');
   const [showBalance, setShowBalance] = useState(true);
-  const [user, setUser] = useState<User>({
-    name: 'John Doe',
-    phone: '+233 24 123 4567',
-    balance: 1250.50
-  });
-  const [transactions, setTransactions] = useState<Transaction[]>([
-    {
-      id: '1',
-      type: 'deposit',
-      amount: 500,
-      provider: 'MTN Mobile Money',
-      phone: '+233 24 123 4567',
-      status: 'completed',
-      date: new Date('2024-01-15T10:30:00'),
-      reference: 'TXN001234567'
-    },
-    {
-      id: '2',
-      type: 'withdrawal',
-      amount: 200,
-      provider: 'AirtelTigo Money',
-      phone: '+233 26 987 6543',
-      status: 'completed',
-      date: new Date('2024-01-14T15:45:00'),
-      reference: 'TXN001234568'
-    },
-    {
-      id: '3',
-      type: 'deposit',
-      amount: 1000,
-      provider: 'Telecel Cash',
-      phone: '+233 20 555 1234',
-      status: 'pending',
-      date: new Date('2024-01-13T09:15:00'),
-      reference: 'TXN001234569'
-    }
-  ]);
+  const [user, setUser] = useState<UserProfile | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const [depositForm, setDepositForm] = useState({
     amount: '',
@@ -90,71 +50,130 @@ export default function WalletApp() {
     phone: ''
   });
 
-  const handleDeposit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const newTransaction: Transaction = {
-      id: Date.now().toString(),
-      type: 'deposit',
-      amount: parseFloat(depositForm.amount),
-      provider: PROVIDERS.find(p => p.id === depositForm.provider)?.name || '',
-      phone: depositForm.phone,
-      status: 'pending',
-      date: new Date(),
-      reference: `TXN${Date.now()}`
-    };
-    
-    setTransactions(prev => [newTransaction, ...prev]);
-    setDepositForm({ amount: '', provider: '', phone: '' });
-    setCurrentView('dashboard');
-    
-    // Simulate transaction completion
-    setTimeout(() => {
-      setTransactions(prev => 
-        prev.map(t => 
-          t.id === newTransaction.id 
-            ? { ...t, status: 'completed' as const }
-            : t
-        )
-      );
-      setUser(prev => ({ ...prev, balance: prev.balance + parseFloat(depositForm.amount) }));
-    }, 3000);
+  useEffect(() => {
+    loadUserData();
+  }, []);
+
+  const loadUserData = async () => {
+    try {
+      const currentUser = await authService.getCurrentUser();
+      if (currentUser) {
+        const profile = await authService.getUserProfile(currentUser.id);
+        const userTransactions = await transactionService.getUserTransactions(currentUser.id);
+        
+        setUser(profile);
+        setTransactions(userTransactions);
+      }
+    } catch (error) {
+      console.error('Error loading user data:', error);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleWithdraw = (e: React.FormEvent) => {
+  const handleDeposit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!user) return;
+
+    setActionLoading(true);
+    try {
+      const provider = PROVIDERS.find(p => p.id === depositForm.provider);
+      const transaction = await transactionService.createTransaction({
+        user_id: user.id,
+        type: 'deposit',
+        amount: parseFloat(depositForm.amount),
+        provider: provider?.name || '',
+        phone: depositForm.phone,
+        status: 'pending'
+      });
+
+      // Simulate processing time
+      setTimeout(async () => {
+        try {
+          await transactionService.updateTransactionStatus(transaction.id, 'completed');
+          const newBalance = await transactionService.updateUserBalance(
+            user.id, 
+            parseFloat(depositForm.amount), 
+            'deposit'
+          );
+          
+          setUser(prev => prev ? { ...prev, balance: newBalance } : null);
+          await loadUserData(); // Refresh transactions
+        } catch (error) {
+          await transactionService.updateTransactionStatus(transaction.id, 'failed');
+          console.error('Transaction failed:', error);
+        }
+      }, 3000);
+
+      setDepositForm({ amount: '', provider: '', phone: '' });
+      setCurrentView('dashboard');
+      await loadUserData(); // Refresh to show pending transaction
+    } catch (error) {
+      console.error('Error creating deposit:', error);
+      alert('Failed to create deposit transaction');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleWithdraw = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!user) return;
+
     const amount = parseFloat(withdrawForm.amount);
-    
     if (amount > user.balance) {
       alert('Insufficient balance');
       return;
     }
 
-    const newTransaction: Transaction = {
-      id: Date.now().toString(),
-      type: 'withdrawal',
-      amount: amount,
-      provider: PROVIDERS.find(p => p.id === withdrawForm.provider)?.name || '',
-      phone: withdrawForm.phone,
-      status: 'pending',
-      date: new Date(),
-      reference: `TXN${Date.now()}`
-    };
-    
-    setTransactions(prev => [newTransaction, ...prev]);
-    setWithdrawForm({ amount: '', provider: '', phone: '' });
-    setCurrentView('dashboard');
-    
-    // Simulate transaction completion
-    setTimeout(() => {
-      setTransactions(prev => 
-        prev.map(t => 
-          t.id === newTransaction.id 
-            ? { ...t, status: 'completed' as const }
-            : t
-        )
-      );
-      setUser(prev => ({ ...prev, balance: prev.balance - amount }));
-    }, 3000);
+    setActionLoading(true);
+    try {
+      const provider = PROVIDERS.find(p => p.id === withdrawForm.provider);
+      const transaction = await transactionService.createTransaction({
+        user_id: user.id,
+        type: 'withdrawal',
+        amount: amount,
+        provider: provider?.name || '',
+        phone: withdrawForm.phone,
+        status: 'pending'
+      });
+
+      // Simulate processing time
+      setTimeout(async () => {
+        try {
+          await transactionService.updateTransactionStatus(transaction.id, 'completed');
+          const newBalance = await transactionService.updateUserBalance(
+            user.id, 
+            amount, 
+            'withdrawal'
+          );
+          
+          setUser(prev => prev ? { ...prev, balance: newBalance } : null);
+          await loadUserData(); // Refresh transactions
+        } catch (error) {
+          await transactionService.updateTransactionStatus(transaction.id, 'failed');
+          console.error('Transaction failed:', error);
+        }
+      }, 3000);
+
+      setWithdrawForm({ amount: '', provider: '', phone: '' });
+      setCurrentView('dashboard');
+      await loadUserData(); // Refresh to show pending transaction
+    } catch (error) {
+      console.error('Error creating withdrawal:', error);
+      alert('Failed to create withdrawal transaction');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await authService.signOut();
+      onSignOut();
+    } catch (error) {
+      console.error('Error signing out:', error);
+    }
   };
 
   const formatCurrency = (amount: number) => {
@@ -164,14 +183,14 @@ export default function WalletApp() {
     }).format(amount);
   };
 
-  const formatDate = (date: Date) => {
+  const formatDate = (dateString: string) => {
     return new Intl.DateTimeFormat('en-GH', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
-    }).format(date);
+    }).format(new Date(dateString));
   };
 
   const getStatusColor = (status: string) => {
@@ -182,6 +201,22 @@ export default function WalletApp() {
       default: return 'text-gray-600 bg-gray-50';
     }
   };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary-600" />
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <p>Error loading user data</p>
+      </div>
+    );
+  }
 
   const renderDashboard = () => (
     <div className="space-y-6">
@@ -272,6 +307,11 @@ export default function WalletApp() {
               </div>
             </div>
           ))}
+          {transactions.length === 0 && (
+            <div className="p-6 text-center text-gray-500">
+              No transactions yet
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -347,10 +387,14 @@ export default function WalletApp() {
 
         <button
           type="submit"
-          disabled={!depositForm.amount || !depositForm.provider || !depositForm.phone}
-          className="w-full bg-success-600 text-white py-3 px-4 rounded-xl font-semibold hover:bg-success-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+          disabled={!depositForm.amount || !depositForm.provider || !depositForm.phone || actionLoading}
+          className="w-full bg-success-600 text-white py-3 px-4 rounded-xl font-semibold hover:bg-success-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
         >
-          Deposit {depositForm.amount && formatCurrency(parseFloat(depositForm.amount))}
+          {actionLoading ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
+          ) : (
+            `Deposit ${depositForm.amount ? formatCurrency(parseFloat(depositForm.amount)) : ''}`
+          )}
         </button>
       </form>
     </div>
@@ -434,10 +478,14 @@ export default function WalletApp() {
 
         <button
           type="submit"
-          disabled={!withdrawForm.amount || !withdrawForm.provider || !withdrawForm.phone}
-          className="w-full bg-primary-600 text-white py-3 px-4 rounded-xl font-semibold hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
+          disabled={!withdrawForm.amount || !withdrawForm.provider || !withdrawForm.phone || actionLoading}
+          className="w-full bg-primary-600 text-white py-3 px-4 rounded-xl font-semibold hover:bg-primary-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
         >
-          Withdraw {withdrawForm.amount && formatCurrency(parseFloat(withdrawForm.amount))}
+          {actionLoading ? (
+            <Loader2 className="w-5 h-5 animate-spin" />
+          ) : (
+            `Withdraw ${withdrawForm.amount ? formatCurrency(parseFloat(withdrawForm.amount)) : ''}`
+          )}
         </button>
       </form>
     </div>
@@ -489,7 +537,7 @@ export default function WalletApp() {
               </div>
               <div>
                 <span className="block font-medium">Date</span>
-                <span>{formatDate(transaction.date)}</span>
+                <span>{formatDate(transaction.created_at)}</span>
               </div>
               <div className="col-span-2">
                 <span className="block font-medium">Reference</span>
@@ -498,6 +546,11 @@ export default function WalletApp() {
             </div>
           </div>
         ))}
+        {transactions.length === 0 && (
+          <div className="p-6 text-center text-gray-500">
+            No transactions yet
+          </div>
+        )}
       </div>
     </div>
   );
@@ -508,7 +561,7 @@ export default function WalletApp() {
         <div className="w-20 h-20 bg-primary-100 rounded-full flex items-center justify-center mx-auto mb-4">
           <User className="w-10 h-10 text-primary-600" />
         </div>
-        <h2 className="text-2xl font-bold text-gray-900 mb-1">{user.name}</h2>
+        <h2 className="text-2xl font-bold text-gray-900 mb-1">{user.full_name}</h2>
         <p className="text-gray-600">{user.phone}</p>
       </div>
 
@@ -518,7 +571,11 @@ export default function WalletApp() {
           <div className="space-y-4">
             <div className="flex justify-between">
               <span className="text-gray-600">Full Name</span>
-              <span className="font-medium text-gray-900">{user.name}</span>
+              <span className="font-medium text-gray-900">{user.full_name}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-gray-600">Email</span>
+              <span className="font-medium text-gray-900">{user.email}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-gray-600">Phone Number</span>
@@ -537,18 +594,28 @@ export default function WalletApp() {
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <Shield className="w-5 h-5 text-success-600" />
-                <span className="text-gray-700">Two-Factor Authentication</span>
+                <span className="text-gray-700">Account Security</span>
               </div>
-              <span className="text-success-600 text-sm font-medium">Enabled</span>
+              <span className="text-success-600 text-sm font-medium">Active</span>
             </div>
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
                 <CreditCard className="w-5 h-5 text-success-600" />
-                <span className="text-gray-700">PIN Protection</span>
+                <span className="text-gray-700">Transaction Protection</span>
               </div>
-              <span className="text-success-600 text-sm font-medium">Active</span>
+              <span className="text-success-600 text-sm font-medium">Enabled</span>
             </div>
           </div>
+        </div>
+
+        <div className="p-6">
+          <button
+            onClick={handleSignOut}
+            className="w-full flex items-center justify-center space-x-2 bg-error-50 text-error-600 py-3 px-4 rounded-xl font-semibold hover:bg-error-100 transition-colors"
+          >
+            <LogOut className="w-5 h-5" />
+            <span>Sign Out</span>
+          </button>
         </div>
       </div>
     </div>
