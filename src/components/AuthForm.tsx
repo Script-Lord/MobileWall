@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Wallet, Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Wallet, Eye, EyeOff, Loader2, AlertCircle, Info } from 'lucide-react';
 import { authService } from '../lib/auth';
 
 interface AuthFormProps {
@@ -34,15 +34,21 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
     } catch (err: any) {
       console.error('Auth error:', err);
       
-      // Handle specific error types
+      // Handle specific error types with more helpful messages
       if (err.message?.includes('over_email_send_rate_limit')) {
         setError('Too many signup attempts. Please wait a minute before trying again.');
-      } else if (err.message?.includes('invalid_credentials')) {
-        setError('Invalid email or password. Please check your credentials.');
+      } else if (err.message?.includes('invalid_credentials') || err.message?.includes('Invalid login credentials')) {
+        if (isLogin) {
+          setError('No account found with these credentials. Try signing up first or check your email/password.');
+        } else {
+          setError('Invalid credentials provided. Please check your information.');
+        }
       } else if (err.message?.includes('User already registered')) {
         setError('An account with this email already exists. Please sign in instead.');
       } else if (err.message?.includes('row-level security')) {
         setError('Account creation failed. Please try again in a moment.');
+      } else if (err.message?.includes('Email not confirmed')) {
+        setError('Please check your email and confirm your account before signing in.');
       } else {
         setError(err.message || 'An error occurred. Please try again.');
       }
@@ -55,6 +61,18 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
     setFormData(prev => ({
       ...prev,
       [e.target.name]: e.target.value
+    }));
+  };
+
+  const handleModeSwitch = () => {
+    setIsLogin(!isLogin);
+    setError(''); // Clear error when switching modes
+    // Clear form data except password when switching modes
+    setFormData(prev => ({
+      email: '',
+      password: 'GhanaPay123!',
+      fullName: '',
+      phone: ''
     }));
   };
 
@@ -81,16 +99,34 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
             </p>
           </div>
 
-          {/* Default Password Notice */}
+          {/* Instructions */}
           <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-            <p className="text-blue-700 text-sm">
-              <strong>For testing:</strong> Default password is already filled in: <code className="bg-blue-100 px-1 rounded">GhanaPay123!</code>
-            </p>
+            <div className="flex items-start space-x-2">
+              <Info className="w-5 h-5 text-blue-600 mt-0.5 flex-shrink-0" />
+              <div className="text-blue-700 text-sm">
+                {isLogin ? (
+                  <div>
+                    <p className="font-medium mb-1">To sign in:</p>
+                    <p>Use an email you've already registered with the password: <code className="bg-blue-100 px-1 rounded">GhanaPay123!</code></p>
+                    <p className="mt-1 text-blue-600">Don't have an account? Switch to "Create Account" below.</p>
+                  </div>
+                ) : (
+                  <div>
+                    <p className="font-medium mb-1">To create an account:</p>
+                    <p>Use a new email address. Password is pre-filled: <code className="bg-blue-100 px-1 rounded">GhanaPay123!</code></p>
+                    <p className="mt-1 text-blue-600">Fill in all required fields below.</p>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           {error && (
             <div className="mb-4 p-4 bg-error-50 border border-error-200 rounded-xl">
-              <p className="text-error-600 text-sm">{error}</p>
+              <div className="flex items-start space-x-2">
+                <AlertCircle className="w-5 h-5 text-error-600 mt-0.5 flex-shrink-0" />
+                <p className="text-error-600 text-sm">{error}</p>
+              </div>
             </div>
           )}
 
@@ -99,7 +135,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
               <>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Full Name
+                    Full Name *
                   </label>
                   <input
                     type="text"
@@ -114,7 +150,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Phone Number
+                    Phone Number *
                   </label>
                   <input
                     type="tel"
@@ -131,7 +167,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Email Address
+                Email Address *
               </label>
               <input
                 type="email"
@@ -140,13 +176,13 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
                 value={formData.email}
                 onChange={handleInputChange}
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-                placeholder="Enter your email"
+                placeholder={isLogin ? "Enter your registered email" : "Enter a new email address"}
               />
             </div>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                Password
+                Password *
               </label>
               <div className="relative">
                 <input
@@ -183,14 +219,18 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
 
           <div className="mt-6 text-center">
             <button
-              onClick={() => {
-                setIsLogin(!isLogin);
-                setError(''); // Clear error when switching modes
-              }}
+              onClick={handleModeSwitch}
               className="text-primary-600 hover:text-primary-700 font-medium"
             >
               {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
             </button>
+          </div>
+
+          {/* Additional Help */}
+          <div className="mt-4 p-3 bg-gray-50 rounded-xl">
+            <p className="text-gray-600 text-xs text-center">
+              Having trouble? Make sure your Supabase project is properly configured and connected.
+            </p>
           </div>
         </div>
       </div>
