@@ -11,39 +11,58 @@ export interface UserProfile {
 
 export const authService = {
   async signUp(email: string, password: string, fullName: string, phone: string) {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-    });
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+      });
 
-    if (error) throw error;
+      if (error) throw error;
 
-    if (data.user) {
-      // Create user profile
-      const { error: profileError } = await supabase
-        .from('users')
-        .insert({
-          id: data.user.id,
-          email,
-          full_name: fullName,
-          phone,
-          balance: 0
-        });
+      if (data.user) {
+        // Wait a moment for the auth state to be fully established
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        // Create user profile
+        const { error: profileError } = await supabase
+          .from('users')
+          .insert({
+            id: data.user.id,
+            email,
+            full_name: fullName,
+            phone,
+            balance: 0
+          });
 
-      if (profileError) throw profileError;
+        if (profileError) {
+          console.error('Profile creation error:', profileError);
+          throw new Error(`Failed to create user profile: ${profileError.message}`);
+        }
+      }
+
+      return data;
+    } catch (error) {
+      console.error('Signup error:', error);
+      throw error;
     }
-
-    return data;
   },
 
   async signIn(email: string, password: string) {
-    const { data, error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
 
-    if (error) throw error;
-    return data;
+      if (error) {
+        console.error('Sign in error:', error);
+        throw error;
+      }
+      return data;
+    } catch (error) {
+      console.error('Sign in error:', error);
+      throw error;
+    }
   },
 
   async signOut() {

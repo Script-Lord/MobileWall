@@ -32,7 +32,20 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
       }
       onAuthSuccess();
     } catch (err: any) {
-      setError(err.message || 'An error occurred');
+      console.error('Auth error:', err);
+      
+      // Handle specific error types
+      if (err.message?.includes('over_email_send_rate_limit')) {
+        setError('Too many signup attempts. Please wait a minute before trying again.');
+      } else if (err.message?.includes('invalid_credentials')) {
+        setError('Invalid email or password. Please check your credentials.');
+      } else if (err.message?.includes('User already registered')) {
+        setError('An account with this email already exists. Please sign in instead.');
+      } else if (err.message?.includes('row-level security')) {
+        setError('Account creation failed. Please try again in a moment.');
+      } else {
+        setError(err.message || 'An error occurred. Please try again.');
+      }
     } finally {
       setLoading(false);
     }
@@ -163,7 +176,10 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
 
           <div className="mt-6 text-center">
             <button
-              onClick={() => setIsLogin(!isLogin)}
+              onClick={() => {
+                setIsLogin(!isLogin);
+                setError(''); // Clear error when switching modes
+              }}
               className="text-primary-600 hover:text-primary-700 font-medium"
             >
               {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
