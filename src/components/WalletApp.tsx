@@ -16,9 +16,7 @@ import {
 } from 'lucide-react';
 import { authService, type UserProfile } from '../lib/auth';
 import { transactionService } from '../lib/transactions';
-import type { Database } from '../lib/database.types';
-
-type Transaction = Database['public']['Tables']['transactions']['Row'];
+import type { Transaction } from '../lib/database';
 
 const PROVIDERS = [
   { id: 'mtn', name: 'MTN Mobile Money', color: 'bg-yellow-500', logo: '📱' },
@@ -183,14 +181,15 @@ export default function WalletApp({ onSignOut }: WalletAppProps) {
     }).format(amount);
   };
 
-  const formatDate = (dateString: string) => {
+  const formatDate = (date: Date | string) => {
+    const dateObj = typeof date === 'string' ? new Date(date) : date;
     return new Intl.DateTimeFormat('en-GH', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit'
-    }).format(new Date(dateString));
+    }).format(dateObj);
   };
 
   const getStatusColor = (status: string) => {

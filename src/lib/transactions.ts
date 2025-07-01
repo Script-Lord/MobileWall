@@ -1,71 +1,96 @@
-import { supabase } from './supabase';
-import type { Database } from './database.types';
-
-type Transaction = Database['public']['Tables']['transactions']['Row'];
-type TransactionInsert = Database['public']['Tables']['transactions']['Insert'];
+import { db } from './database';
+import type { Transaction } from './database';
 
 export const transactionService = {
-  async createTransaction(transaction: Omit<TransactionInsert, 'id' | 'created_at' | 'updated_at'>) {
-    const { data, error } = await supabase
-      .from('transactions')
-      .insert({
-        ...transaction,
-        reference: `TXN${Date.now()}${Math.random().toString(36).substr(2, 9).toUpperCase()}`
-      })
-      .select()
-      .single();
+  async createTransaction(transaction: Omit<Transaction, 'id' | 'created_at' | 'updated_at'>) {
+    try {
+      const transactionId = crypto.randomUUID();
+      const reference = `TXN${Date.now()}${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
 
-    if (error) throw error;
-    return data;
+      await db.execute(
+        `INSERT INTO transactions (id, user_id, type, amount, provider, phone, status, reference, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())`,
+        [
+          transactionId,
+          transaction.user_id,
+          transaction.type,
+          transaction.amount,
+          transaction.provider,
+          transaction.phone,
+          transaction.status || 'pending',
+          reference
+        ]
+      );
+
+      // Fetch the created transaction
+      const result = await db.execute(
+        'SELECT * FROM transactions WHERE id = ?',
+        [transactionId]
+      );
+
+      return result.rows[0] as Transaction;
+    } catch (error) {
+      console.error('Error creating transaction:', error);
+      throw error;
+    }
   },
 
   async getUserTransactions(userId: string): Promise<Transaction[]> {
-    const { data, error } = await supabase
-      .from('transactions')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
+    try {
+      const result = await db.execute(
+        'SELECT * FROM transactions WHERE user_id = ? ORDER BY created_at DESC',
+        [userId]
+      );
 
-    if (error) throw error;
-    return data || [];
+      return result.rows as Transaction[];
+    } catch (error) {
+      console.error('Error fetching transactions:', error);
+      throw error;
+    }
   },
 
   async updateTransactionStatus(transactionId: string, status: 'completed' | 'failed') {
-    const { error } = await supabase
-      .from('transactions')
-      .update({ status, updated_at: new Date().toISOString() })
-      .eq('id', transactionId);
-
-    if (error) throw error;
+    try {
+      await db.execute(
+        'UPDATE transactions SET status = ?, updated_at = NOW() WHERE id = ?',
+        [status, transactionId]
+      );
+    } catch (error) {
+      console.error('Error updating transaction status:', error);
+      throw error;
+    }
   },
 
   async updateUserBalance(userId: string, amount: number, type: 'deposit' | 'withdrawal') {
-    // Get current balance
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('balance')
-      .eq('id', userId)
-      .single();
+    try {
+      // Get current balance
+      const userResult = await db.execute(
+        'SELECT balance FROM users WHERE id = ?',
+        [userId]
+      );
 
-    if (userError) throw userError;
+      if (userResult.rows.length === 0) {
+        throw new Error('User not found');
+      }
 
-    const newBalance = type === 'deposit' 
-      ? user.balance + amount 
-      : user.balance - amount;
+      const currentBalance = Number(userResult.rows[0].balance);
+      const newBalance = type === 'deposit' 
+        ? currentBalance + amount 
+        : currentBalance - amount;
 
-    if (newBalance < 0) {
-      throw new Error('Insufficient balance');
+      if (newBalance < 0) {
+        throw new Error('Insufficient balance');
+      }
+
+      await db.execute(
+        'UPDATE users SET balance = ?, updated_at = NOW() WHERE id = ?',
+        [newBalance, userId]
+      );
+
+      return newBalance;
+    } catch (error) {
+      console.error('Error updating user balance:', error);
+      throw error;
     }
-
-    const { error } = await supabase
-      .from('users')
-      .update({ 
-        balance: newBalance,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', userId);
-
-    if (error) throw error;
-    return newBalance;
   }
 };

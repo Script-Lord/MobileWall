@@ -35,20 +35,14 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
       console.error('Auth error:', err);
       
       // Handle specific error types with more helpful messages
-      if (err.message?.includes('over_email_send_rate_limit')) {
-        setError('Too many signup attempts. Please wait a minute before trying again.');
-      } else if (err.message?.includes('invalid_credentials') || err.message?.includes('Invalid login credentials')) {
+      if (err.message?.includes('User already exists')) {
+        setError('An account with this email already exists. Please sign in instead.');
+      } else if (err.message?.includes('Invalid login credentials')) {
         if (isLogin) {
           setError('No account found with these credentials. Try signing up first or check your email/password.');
         } else {
           setError('Invalid credentials provided. Please check your information.');
         }
-      } else if (err.message?.includes('User already registered')) {
-        setError('An account with this email already exists. Please sign in instead.');
-      } else if (err.message?.includes('row-level security')) {
-        setError('Account creation failed. Please try again in a moment.');
-      } else if (err.message?.includes('Email not confirmed')) {
-        setError('Please check your email and confirm your account before signing in.');
       } else {
         setError(err.message || 'An error occurred. Please try again.');
       }
@@ -229,7 +223,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
           {/* Additional Help */}
           <div className="mt-4 p-3 bg-gray-50 rounded-xl">
             <p className="text-gray-600 text-xs text-center">
-              Having trouble? Make sure your Supabase project is properly configured and connected.
+              Having trouble? Make sure your PlanetScale database is properly configured and connected.
             </p>
           </div>
         </div>
