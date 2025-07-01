@@ -14,7 +14,7 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
   
   const [formData, setFormData] = useState({
     email: '',
-    password: '',
+    password: 'GhanaPay123!', // Default password for testing
     fullName: '',
     phone: ''
   });
@@ -78,6 +78,13 @@ export default function AuthForm({ onAuthSuccess }: AuthFormProps) {
             </h2>
             <p className="text-gray-600">
               {isLogin ? 'Sign in to your account' : 'Join thousands of users'}
+            </p>
+          </div>
+
+          {/* Default Password Notice */}
+          <div className="mb-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+            <p className="text-blue-700 text-sm">
+              <strong>For testing:</strong> Default password is already filled in: <code className="bg-blue-100 px-1 rounded">GhanaPay123!</code>
             </p>
           </div>
 
